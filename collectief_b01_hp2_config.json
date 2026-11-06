@@ -1,0 +1,8 @@
+{
+  "mappings": {
+    "hp2": {
+      "role": "ENERGY",
+      "unit": "kWh"
+    }
+  }
+}

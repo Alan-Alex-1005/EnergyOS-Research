@@ -1,0 +1,12 @@
+{
+  "timestamp_column": "DateTime",
+  "mappings": {
+    "Main_Load": {
+      "role": "POWER",
+      "unit": "kW"
+    },
+    "AHU_State": {
+      "role": "STATUS"
+    }
+  }
+}

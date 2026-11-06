@@ -1,0 +1,20 @@
+{
+  "timestamp_column": "DateTime",
+  "mappings": {
+    "Main_Power_kW": {
+      "role": "POWER",
+      "unit": "kW"
+    },
+    "Energy_kWh": {
+      "role": "ENERGY",
+      "unit": "kWh"
+    },
+    "OutdoorTemp_C": {
+      "role": "TEMPERATURE",
+      "unit": "C"
+    },
+    "AHU_State": {
+      "role": "STATUS"
+    }
+  }
+}

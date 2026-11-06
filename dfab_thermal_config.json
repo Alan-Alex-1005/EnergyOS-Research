@@ -1,0 +1,15 @@
+{
+  "mappings": {
+    "Unnamed: 0": {
+      "role": "TIMESTAMP"
+    },
+    "EMPA__DFAB__Full__MTE_Net__power_heat__KWT____42190125__main_meter_thermal": {
+      "role": "POWER",
+      "unit": "kW"
+    },
+    "EMPA__DFAB__Sub_heat__Floor_hydro__power_heat__KWT____421100172__underfloor_meter_thermal": {
+      "role": "POWER",
+      "unit": "kW"
+    }
+  }
+}

@@ -1,0 +1,39 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Generated artifacts
+outputs/
+logs/
+*.log
+
+# Local datasets
+data/
+datasets/
+*.csv
+*.xlsx
+*.xls
+*.parquet
+
+# Archives
+*.rar
+*.zip
