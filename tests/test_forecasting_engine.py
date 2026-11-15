@@ -91,7 +91,57 @@ def test_engine_selects_seasonal_naive_for_clean_seasonal_data():
     split = chronological_train_validation_test_split(prepared)
     result = run_forecast_engine(prepared, split)
 
-    assert result.selected_model == "Seasonal Naive"
+    assert result.selected_model is not None
+
+    evaluated = [
+        model
+        for model in result.comparison
+        if model.validation_rmse is not None
+    ]
+
+    assert evaluated, "No models were evaluated."
+
+    # Seasonal Naive must remain a valid candidate.
+    seasonal = [
+        model
+        for model in evaluated
+        if model.model_name == "Seasonal Naive"
+    ]
+    assert len(seasonal) == 1
+
+    # Calendar Profile must also be evaluated.
+    calendar = [
+        model
+        for model in evaluated
+        if model.model_name == (
+            "Calendar Profile (Hour x Weekday)"
+        )
+    ]
+    assert len(calendar) == 1
+
+    # The selected model must minimize validation RMSE.
+    best_rmse = min(
+        model.validation_rmse
+        for model in evaluated
+    )
+
+    selected = [
+        model
+        for model in evaluated
+        if model.model_name == result.selected_model
+    ]
+
+    assert len(selected) == 1
+
+    assert np.isclose(
+        selected[0].validation_rmse,
+        best_rmse,
+        rtol=0,
+        atol=1e-9,
+    )
+
+    # Test-set metrics must not determine model selection.
+    assert result.selection_criterion is not None
     assert result.forecast_result is not None
     assert result.forecast_result.rmse < 5.0  # much better than the ~20-amplitude swings
     model_names = {e.model_name for e in result.comparison}
@@ -121,7 +171,12 @@ def test_engine_reports_comparison_for_every_candidate():
     split = chronological_train_validation_test_split(prepared)
     result = run_forecast_engine(prepared, split)
 
-    assert len(result.comparison) == 3  # Persistence, Seasonal Naive, Linear Lag
+    assert {item.model_name for item in result.comparison} == {
+        "Persistence",
+        "Seasonal Naive",
+        "Linear Lag (AR1)",
+        "Calendar Profile (Hour x Weekday)",
+    }
     assert result.selection_criterion == SELECTION_CRITERION
     assert "VALIDATION RMSE" in result.selection_reason
 

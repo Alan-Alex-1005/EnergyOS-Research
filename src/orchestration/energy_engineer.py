@@ -1,22 +1,30 @@
-"""
-orchestration/energy_engineer.py — Day 4 Part 9: AI Energy Engineer
 
-Deterministic — no external LLM. Every field is assembled directly from
-CollaborationResult / AnalysisRunResult data that already exists; nothing
-is generated freeform. If root cause isn't proven (it never is in this
-system — no schedule model exists), that is stated explicitly rather
-than guessed.
+"""
+orchestration/energy_engineer.py — EnergyOS AI Energy Engineer
+
+Deterministic, evidence-grounded narrative generation.
+No external LLM and no fabricated findings.
+
+TrustAI Safety Enforcement:
+- Withholds forecast-dependent conclusions when reliability is poor.
+- Never treats a blocked incident as proof of normal operation.
+- Preserves raw evidence for auditing and research.
+- Keeps collaboration scores visible without presenting them as
+  validated decision confidence.
+- Does not invent equipment faults or root causes.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from ..analysis_pipeline import AnalysisRunResult
 from .orchestrator import CollaborationResult
 
-ROOT_CAUSE_UNCONFIRMED = "Root cause is not confirmed by available evidence."
+
+ROOT_CAUSE_UNCONFIRMED = (
+    "Root cause is not confirmed by available evidence."
+)
 
 
 @dataclass
@@ -35,13 +43,27 @@ class EnergyEngineerNarrative:
     recommended_action: str = ""
 
 
-def generate_narrative(run: AnalysisRunResult, collab: CollaborationResult) -> EnergyEngineerNarrative:
+def generate_narrative(
+    run: AnalysisRunResult,
+    collab: CollaborationResult,
+) -> EnergyEngineerNarrative:
+
+    # ---------------------------------------------------------
+    # 1. No analytical series
+    # ---------------------------------------------------------
+
     if run.primary is None:
         return EnergyEngineerNarrative(
-            what="No analytical series was available in this dataset.",
+            what=(
+                "No analytical series was available "
+                "in this dataset."
+            ),
             where="n/a",
             when="n/a",
-            why="Not applicable — no POWER/ENERGY/DEMAND series could be analyzed.",
+            why=(
+                "Not applicable — no POWER/ENERGY/DEMAND "
+                "series could be analyzed."
+            ),
             energy_impact="Unavailable.",
             cost_impact="Unavailable.",
             carbon_impact="Unavailable.",
@@ -49,77 +71,394 @@ def generate_narrative(run: AnalysisRunResult, collab: CollaborationResult) -> E
             missing_context=[run.selection_reason],
             confidence="Not computed — no series available.",
             root_cause=ROOT_CAUSE_UNCONFIRMED,
-            recommended_action="Provide a dataset with a mapped POWER/ENERGY/DEMAND series and a timestamp column.",
+            recommended_action=(
+                "Provide a dataset with a mapped "
+                "POWER/ENERGY/DEMAND series and "
+                "a timestamp column."
+            ),
         )
 
     series = run.primary.series
     where = series.label()
 
+    evidence_lines = [
+        f"[{e.source_agent}] {e.description}"
+        for e in collab.evidence
+    ]
+
+    missing_context = []
+
+    for agent_id in collab.unavailable_agents:
+        agent = collab.agents.get(agent_id)
+
+        if agent and agent.limitations:
+            missing_context.append(
+                f"{agent_id}: {agent.limitations[0]}"
+            )
+        elif agent:
+            missing_context.append(
+                f"{agent_id}: {agent.finding}"
+            )
+
+    # ---------------------------------------------------------
+    # 2. Analysis skipped due to insufficient data
+    # ---------------------------------------------------------
+
     if run.primary.skipped_reason:
-        # Insufficient data — NEVER report this as "normal operation" (that
-        # would misrepresent absence-of-analysis as a confirmed finding).
         return EnergyEngineerNarrative(
-            what=f"Analysis could not be performed: {run.primary.skipped_reason}",
+            what=(
+                "Analysis could not be performed: "
+                f"{run.primary.skipped_reason}"
+            ),
             where=where,
             when="n/a",
-            why="Insufficient data — no forecast or anomaly analysis was run for this series.",
-            energy_impact="Unavailable — analysis did not run.",
-            cost_impact="Unavailable — analysis did not run.",
-            carbon_impact="Unavailable — analysis did not run.",
-            evidence=[f"[{e.source_agent}] {e.description}" for e in collab.evidence],
-            missing_context=[run.primary.skipped_reason],
-            confidence=(
-                f"{collab.confidence.score:.1f}/100 — {collab.confidence.label} (reflects the lack of analysis, not a real result)"
-                if collab.confidence
-                else "not computed"
+            why=(
+                "Insufficient data — no forecast or "
+                "anomaly analysis was run for this series."
             ),
+            energy_impact=(
+                "Unavailable — analysis did not run."
+            ),
+            cost_impact=(
+                "Unavailable — analysis did not run."
+            ),
+            carbon_impact=(
+                "Unavailable — analysis did not run."
+            ),
+            evidence=evidence_lines,
+            missing_context=[
+                run.primary.skipped_reason,
+                *missing_context,
+            ],
+            confidence="Not validated — analysis was skipped.",
             root_cause=ROOT_CAUSE_UNCONFIRMED,
-            recommended_action="Collect more data for this series before drawing any conclusion.",
+            recommended_action=(
+                "Collect more data for this series "
+                "before drawing any conclusion."
+            ),
         )
 
-    if not collab.incidents:
-        an = collab.agents.get("anomaly_agent")
-        what = "No anomalous consumption was detected; the series behaved within the range the forecast model expected."
-        when = (
-            f"Test period {run.primary.split.test_start} to {run.primary.split.test_end}"
+    # ---------------------------------------------------------
+    # 3. TrustAI Forecast Reliability Safety Enforcement
+    # ---------------------------------------------------------
+
+    decision_supported = getattr(
+        collab,
+        "decision_supported",
+        None,
+    )
+
+    reliability_status = getattr(
+        collab,
+        "reliability_status",
+        "NOT_ASSESSED",
+    )
+
+    reliability_reasons = list(
+        getattr(
+            collab,
+            "reliability_reasons",
+            [],
+        )
+    )
+
+    withheld_incident_count = getattr(
+        collab,
+        "withheld_incident_count",
+        0,
+    )
+
+    # If orchestration has not supplied a reliability verdict,
+    # independently assess the available forecast.
+    if decision_supported is None:
+        from ..forecasting.reliability import (
+            assess_forecast_reliability,
+        )
+
+        forecast_engine = getattr(
+            run.primary,
+            "forecast",
+            None,
+        )
+
+        forecast_result = (
+            getattr(
+                forecast_engine,
+                "forecast_result",
+                None,
+            )
+            if forecast_engine is not None
+            else None
+        )
+
+        if forecast_result is not None:
+            assessment = assess_forecast_reliability(
+                forecast_result
+            )
+
+            decision_supported = (
+                assessment.suitable_for_anomaly_evidence
+            )
+
+            reliability_status = assessment.status
+            reliability_reasons = list(
+                assessment.reasons
+            )
+
+        else:
+            decision_supported = False
+            reliability_status = "NOT_ASSESSED"
+            reliability_reasons = [
+                "No usable forecast was available "
+                "for reliability assessment."
+            ]
+
+    # ---------------------------------------------------------
+    # 4. Withhold unreliable forecast-dependent conclusions
+    # ---------------------------------------------------------
+
+    if not decision_supported:
+
+        if not reliability_reasons:
+            reliability_reasons = [
+                "Forecast reliability could not "
+                "be established."
+            ]
+
+        test_period = (
+            f"Test period "
+            f"{run.primary.split.test_start} "
+            f"to {run.primary.split.test_end}"
             if run.primary.split
             else "n/a"
         )
-        why = "Normal operation — no deviation warranting investigation was found."
-    else:
-        incident = collab.incidents[0]
-        an_evidence = incident.trigger_evidence[0]
-        what = an_evidence.description
-        when = f"{incident.time_start} to {incident.time_end}" if incident.time_start else "n/a"
-        why = (
-            f"{an_evidence.detail.get('events', []).__len__()} anomaly event(s) were statistically flagged "
-            f"against the series' expected (forecast) behavior."
+
+        safety_evidence = [
+            (
+                "TrustAI reliability gate: "
+                f"{reliability_status}."
+            ),
+            (
+                f"{withheld_incident_count} "
+                "incident candidate(s) withheld "
+                "from actionable conclusions."
+            ),
+            (
+                "Raw statistical findings are retained "
+                "for research and independent review."
+            ),
+        ]
+
+        # Preserve the numerical collaboration score for
+        # compatibility and research transparency.
+        # Explicitly distinguish it from decision confidence.
+        if collab.confidence:
+            confidence_str = (
+                f"{collab.confidence.score:.1f}/100 — "
+                f"{collab.confidence.label} "
+                "(raw collaboration score only; "
+                "NOT validated decision confidence). "
+                "WITHHELD — forecast reliability "
+                "requirements were not met."
+            )
+        else:
+            confidence_str = (
+                "No collaboration score available. "
+                "WITHHELD — forecast reliability "
+                "requirements were not met."
+            )
+
+        return EnergyEngineerNarrative(
+            what=(
+                "Forecast-dependent energy conclusions "
+                "are WITHHELD pending reliability review."
+            ),
+            where=where,
+            when=test_period,
+            why=(
+                "TrustAI rejected the forecast as "
+                "sufficient evidence for actionable "
+                "anomaly conclusions. "
+                + " ".join(reliability_reasons)
+            ),
+            energy_impact=(
+                "Not validated for decision-making."
+            ),
+            cost_impact=(
+                "Not validated for decision-making."
+            ),
+            carbon_impact=(
+                "Not validated for decision-making."
+            ),
+            evidence=[
+                *safety_evidence,
+                *evidence_lines,
+            ],
+            missing_context=[
+                *reliability_reasons,
+                *missing_context,
+            ],
+            confidence=confidence_str,
+            root_cause=ROOT_CAUSE_UNCONFIRMED,
+            recommended_action=(
+                "Review forecasting accuracy, meter "
+                "semantics, operating conditions, "
+                "data quality, and alternative models "
+                "before issuing energy anomaly "
+                "recommendations."
+            ),
         )
 
-    energy_ev = next((e for e in collab.evidence if e.evidence_type == "ENERGY_IMPACT"), None)
-    energy_impact = f"{energy_ev.value:.1f} {energy_ev.unit} ({energy_ev.provenance})" if energy_ev else "Unavailable."
+    # ---------------------------------------------------------
+    # 5. Forecast passed preliminary reliability checks
+    # ---------------------------------------------------------
 
-    cost_ev = next((e for e in collab.evidence if e.evidence_type == "COST_IMPACT"), None)
-    cost_impact = f"{cost_ev.unit or ''} {cost_ev.value:.2f} ({cost_ev.provenance})" if cost_ev else "Unavailable — no tariff configured."
+    if not collab.incidents:
 
-    carbon_ev = next((e for e in collab.evidence if e.evidence_type == "CARBON_IMPACT"), None)
-    carbon_impact = f"{carbon_ev.value:.2f} {carbon_ev.unit} ({carbon_ev.provenance})" if carbon_ev else "Unavailable — no carbon factor configured."
+        what = (
+            "No statistically significant consumption "
+            "deviation was detected against the "
+            "selected forecasting baseline."
+        )
 
-    evidence_lines = [f"[{e.source_agent}] {e.description}" for e in collab.evidence]
+        when = (
+            f"Test period "
+            f"{run.primary.split.test_start} "
+            f"to {run.primary.split.test_end}"
+            if run.primary.split
+            else "n/a"
+        )
 
-    missing_context = []
-    for agent_id in collab.unavailable_agents:
-        agent = collab.agents.get(agent_id)
-        if agent and agent.limitations:
-            missing_context.append(f"{agent_id}: {agent.limitations[0]}")
-        elif agent:
-            missing_context.append(f"{agent_id}: {agent.finding}")
+        why = (
+            "No forecast-based incident candidate "
+            "met the current detection criteria. "
+            "This does not prove normal equipment "
+            "operation."
+        )
 
-    confidence_str = (
-        f"{collab.confidence.score:.1f}/100 — {collab.confidence.label}" if collab.confidence else "not computed"
+    else:
+        incident = collab.incidents[0]
+
+        if incident.trigger_evidence:
+            an_evidence = incident.trigger_evidence[0]
+            what = an_evidence.description
+
+            event_details = (
+                an_evidence.detail or {}
+            )
+
+            event_count = len(
+                event_details.get(
+                    "events",
+                    [],
+                )
+            )
+
+            why = (
+                f"{event_count} anomaly event(s) "
+                "were statistically flagged against "
+                "the forecast baseline. Physical "
+                "root cause is not confirmed."
+            )
+
+        else:
+            what = (
+                "A statistical incident candidate "
+                "was identified."
+            )
+
+            why = (
+                "The collaboration engine identified "
+                "an incident candidate, but no "
+                "trigger evidence was attached."
+            )
+
+        when = (
+            f"{incident.time_start} "
+            f"to {incident.time_end}"
+            if incident.time_start
+            else "n/a"
+        )
+
+    # ---------------------------------------------------------
+    # 6. Evidence-grounded impact calculations
+    # ---------------------------------------------------------
+
+    energy_ev = next(
+        (
+            e
+            for e in collab.evidence
+            if e.evidence_type == "ENERGY_IMPACT"
+        ),
+        None,
     )
 
-    recommended_action = collab.recommendations[0].recommended_action if collab.recommendations else "No action recommended."
+    energy_impact = (
+        f"{energy_ev.value:.1f} "
+        f"{energy_ev.unit} "
+        f"({energy_ev.provenance})"
+        if energy_ev is not None
+        and energy_ev.value is not None
+        else "Unavailable."
+    )
+
+    cost_ev = next(
+        (
+            e
+            for e in collab.evidence
+            if e.evidence_type == "COST_IMPACT"
+        ),
+        None,
+    )
+
+    cost_impact = (
+        f"{cost_ev.unit or ''} "
+        f"{cost_ev.value:.2f} "
+        f"({cost_ev.provenance})"
+        if cost_ev is not None
+        and cost_ev.value is not None
+        else "Unavailable — no validated cost impact."
+    )
+
+    carbon_ev = next(
+        (
+            e
+            for e in collab.evidence
+            if e.evidence_type == "CARBON_IMPACT"
+        ),
+        None,
+    )
+
+    carbon_impact = (
+        f"{carbon_ev.value:.2f} "
+        f"{carbon_ev.unit} "
+        f"({carbon_ev.provenance})"
+        if carbon_ev is not None
+        and carbon_ev.value is not None
+        else "Unavailable — no validated carbon impact."
+    )
+
+    # ---------------------------------------------------------
+    # 7. Confidence and recommendations
+    # ---------------------------------------------------------
+
+    confidence_str = (
+        f"{collab.confidence.score:.1f}/100 — "
+        f"{collab.confidence.label} "
+        "(collaboration score; not a statistical probability)"
+        if collab.confidence
+        else "not computed"
+    )
+
+    recommended_action = (
+        collab.recommendations[0].recommended_action
+        if collab.recommendations
+        else "No forecast-based action recommended."
+    )
+
+    # ---------------------------------------------------------
+    # 8. Return evidence-grounded narrative
+    # ---------------------------------------------------------
 
     return EnergyEngineerNarrative(
         what=what,
@@ -132,6 +471,6 @@ def generate_narrative(run: AnalysisRunResult, collab: CollaborationResult) -> E
         evidence=evidence_lines,
         missing_context=missing_context,
         confidence=confidence_str,
-        root_cause=ROOT_CAUSE_UNCONFIRMED,  # never proven in this system — always explicit
+        root_cause=ROOT_CAUSE_UNCONFIRMED,
         recommended_action=recommended_action,
     )

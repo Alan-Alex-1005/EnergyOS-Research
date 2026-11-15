@@ -1,13 +1,11 @@
-"""
-orchestration/orchestrator.py — Day 4 Part 1: Multi-Agent Orchestrator
 
-Receives the EXISTING AgentResult objects (Day 3) and the Day-2/Day-1
-results they wrap, and coordinates their evidence into one
-CollaborationResult: which agents are available, correlated incidents,
-agreement, completeness, reused data quality, decision-support
-confidence, and deterministic recommendations. Computes NO new
-forecasting/anomaly/impact mathematics — that stays exactly where Day 2/3
-put it.
+"""
+EnergyOS multi-agent orchestration.
+
+Coordinates specialist agents and applies forecast reliability
+enforcement before generating incident recommendations.
+
+Raw anomaly results remain available for research and auditing.
 """
 
 from __future__ import annotations
@@ -17,6 +15,8 @@ from typing import Optional
 
 from ..agents.runner import run_all_agents
 from ..analysis_pipeline import AnalysisRunResult
+from ..forecasting.reliability import assess_forecast_reliability
+
 from .agreement import AgreementResult, compute_agreement
 from .completeness import CompletenessResult, compute_completeness
 from .confidence import ConfidenceResult, compute_confidence
@@ -39,15 +39,34 @@ class CollaborationResult:
     confidence: Optional[ConfidenceResult] = None
     recommendations: list = field(default_factory=list)
 
+    # TrustAI safety information
+    reliability_status: str = "NOT_ASSESSED"
+    decision_supported: bool = False
+    reliability_reasons: list[str] = field(default_factory=list)
+    withheld_incident_count: int = 0
 
-def run_orchestration(run: AnalysisRunResult, impact_config_raw: Optional[dict] = None) -> CollaborationResult:
+
+def run_orchestration(
+    run: AnalysisRunResult,
+    impact_config_raw: Optional[dict] = None,
+) -> CollaborationResult:
+
     agents = run_all_agents(run, impact_config_raw)
 
-    available_agents = [k for k, v in agents.items() if v.status in ("DONE", "LIMITED")]
-    unavailable_agents = [k for k, v in agents.items() if v.status not in ("DONE", "LIMITED")]
+    available_agents = [
+        name
+        for name, agent in agents.items()
+        if agent.status in ("DONE", "LIMITED")
+    ]
 
+    unavailable_agents = [
+        name
+        for name, agent in agents.items()
+        if agent.status not in ("DONE", "LIMITED")
+    ]
+
+    # Preserve all raw evidence for research and audit.
     evidence = extract_evidence(agents, run.primary)
-    incidents = correlate_incidents(evidence)
 
     agreement = compute_agreement(agents)
     completeness = compute_completeness(agents, run.primary)
@@ -55,9 +74,52 @@ def run_orchestration(run: AnalysisRunResult, impact_config_raw: Optional[dict] 
     data_quality = run.day1.quality_result.overall
     data_quality_status = run.day1.quality_result.status
 
-    confidence = compute_confidence(data_quality, agreement.score, completeness.score)
+    # This is the original collaboration score.
+    # It is NOT sufficient by itself to approve a decision.
+    confidence = compute_confidence(
+        data_quality,
+        agreement.score,
+        completeness.score,
+    )
 
-    recommendations = generate_recommendations(incidents, agents)
+    reliability_status = "NOT_ASSESSED"
+    reliability_reasons = [
+        "No usable forecast was available for reliability assessment."
+    ]
+    decision_supported = False
+
+    if (
+        run.primary is not None
+        and run.primary.forecast is not None
+        and run.primary.forecast.forecast_result is not None
+    ):
+        assessment = assess_forecast_reliability(
+            run.primary.forecast.forecast_result
+        )
+
+        reliability_status = assessment.status
+        reliability_reasons = list(assessment.reasons)
+
+        decision_supported = (
+            assessment.suitable_for_anomaly_evidence
+        )
+
+    # Calculate candidate incidents for auditing.
+    candidate_incidents = correlate_incidents(evidence)
+
+    if decision_supported:
+        incidents = candidate_incidents
+        recommendations = generate_recommendations(
+            incidents,
+            agents,
+        )
+        withheld_incident_count = 0
+    else:
+        # Do not present forecast-dependent candidates
+        # as actionable incidents.
+        incidents = []
+        recommendations = []
+        withheld_incident_count = len(candidate_incidents)
 
     return CollaborationResult(
         agents=agents,
@@ -71,4 +133,8 @@ def run_orchestration(run: AnalysisRunResult, impact_config_raw: Optional[dict] 
         data_quality_status=data_quality_status,
         confidence=confidence,
         recommendations=recommendations,
+        reliability_status=reliability_status,
+        decision_supported=decision_supported,
+        reliability_reasons=reliability_reasons,
+        withheld_incident_count=withheld_incident_count,
     )

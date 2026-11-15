@@ -1,0 +1,34 @@
+ENERGYOS RESEARCH DEMO v2 — PRESENTATION SUMMARY
+=======================================================
+
+Dataset: COLLECTiEF B01 main
+  Selected model : Calendar Profile (Hour x Weekday)
+  Validation RMSE: 27.800342118494747
+  Test RMSE      : 26.78681301749208
+  Test R²        : 0.2100758705722458
+  TrustAI        : PROVISIONALLY_ACCEPTABLE
+  Notes          : Basic reliability checks passed; this does not establish forecasting skill or confirm anomalies.
+
+Dataset: COLLECTiEF B01 hp2
+  Selected model : Persistence
+  Validation RMSE: 11.92463708869036
+  Test RMSE      : 32.59207171511952
+  Test R²        : -3.620686575820253
+  TrustAI        : REVIEW_REQUIRED
+  Notes          : Negative test R2: forecast performs worse than the test-period mean benchmark. | RMSE is 113.0% of mean absolute load; requires domain-specific review.
+
+Dataset: L08 B01 ES08 power
+  Selected model : Linear Lag (AR1)
+  Validation RMSE: 12.249603462408436
+  Test RMSE      : 23.78703726707073
+  Test R²        : -0.5853295454895966
+  TrustAI        : REVIEW_REQUIRED
+  Notes          : Negative test R2: forecast performs worse than the test-period mean benchmark. | RMSE is 101.3% of mean absolute load; requires domain-specific review.
+
+Dataset: L08 B01 ES09 power
+  Selected model : Linear Lag (AR1)
+  Validation RMSE: 18.019607374968192
+  Test RMSE      : 21.422609176275323
+  Test R²        : -3.292674847558282
+  TrustAI        : REVIEW_REQUIRED
+  Notes          : Negative test R2: forecast performs worse than the test-period mean benchmark. | RMSE is 501.8% of mean absolute load; requires domain-specific review.
